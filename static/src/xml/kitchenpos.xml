@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+    
+    <t t-extend="Orderline">
+        <t t-jquery=".info-list" t-operation="append">
+            <t t-if="line.get_state_order()">
+                <li class="info orderline-state_order">
+                    <i class='fa fa-tag'/><t t-esc="line.get_state_order()" /> <i class="fa fa-arrow-right"/><t t-esc="line.get_state_kitchen_order()" />
+                </li>
+            </t>
+        </t>
+    </t>
+
+    <t t-name="ButtonOpenOrder">
+        <span class="control-button open-order" style="display: none;">
+            <i class="fa fa-plus"></i>
+            Open
+        </span>
+    </t>
+
+</templates>
