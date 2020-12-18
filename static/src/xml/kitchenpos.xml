@@ -3,9 +3,9 @@
     
     <t t-extend="Orderline">
         <t t-jquery=".info-list" t-operation="append">
-            <t t-if="line.get_state_order()">
+            <t t-if="line.get_state_orderline()">
                 <li class="info orderline-state_order">
-                    <i class='fa fa-tag'/><t t-esc="line.get_state_order()" /> <i class="fa fa-arrow-right"/><t t-esc="line.get_state_kitchen_order()" />
+                    <i class='fa fa-tag'/><t t-esc="line.get_state_orderline()" /> <i class='fa fa-arrow-right'/> <t t-esc="line.get_state_kitchen_order()" />
                 </li>
             </t>
         </t>

@@ -13,7 +13,6 @@ Modul Kitchen Screen Flectra
         'views/kitchen_screen.xml',
     ],
     'qweb': [
-        # 'static/src/xml/openorder.xml',
         'static/src/xml/kitchenpos.xml',
     ],
     'installable': True,

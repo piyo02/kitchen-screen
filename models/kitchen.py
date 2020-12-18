@@ -1,5 +1,5 @@
 from flectra import api, fields, models, tools, SUPERUSER_ID, _
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ class KitchenScreen(models.Model):
     _name = 'kitchen.screen'
 
     def _compute_order_count(self):
-        count_data = self.env['kitchen.order'].read_group([('kitchen_id', 'in', self.ids), '|', ('stage_id.fold', '=', False), ('stage_id', '=', False)], ['kitchen_id'], ['kitchen_id'])
+        count_data = self.env['kitchen.order'].read_group([('kitchen_id', 'in', self.ids), '|', '&' , ('stage_id.fold', '=', False), ('stage_id', '=', False), ('date_order', '>=', str(datetime.today()))], ['kitchen_id'], ['kitchen_id'])
         result = dict((data['kitchen_id'][0], data['kitchen_id_count']) for data in count_data)
         for kitchen_screen in self:
             kitchen_screen.order_count = result.get(kitchen_screen.id, 0)
@@ -108,9 +108,15 @@ class KitchenOrder(models.Model):
         # perform search, return the first found
         return self.env['kitchen.order.type'].search(search_domain, order=order, limit=1).id
 
+    @api.one
     def _compute_time_w2s(self):
-        return 1
+        if self.served_date and self.waiting_date:
+            diff_time = datetime.strptime(self.served_date, '%Y-%m-%d %H:%M:%S') - datetime.strptime(self.waiting_date, '%Y-%m-%d %H:%M:%S')
+            self.time = diff_time.total_seconds()
 
+    order_name = fields.Char('Order Name')
+    cid = fields.Char('cid')
+    state_order = fields.Char('State Order')
     active = fields.Boolean(default=True)
     color = fields.Integer(string='Color Index') #
     date_end = fields.Datetime('End Time', index=True, copy=False) #terisi ketika statenya served
@@ -131,7 +137,7 @@ class KitchenOrder(models.Model):
     name = fields.Char(string='Order')
     quantity = fields.Integer('Quantity', default=1)
     sequence = fields.Integer(string='Sequence', index=True, default=10)
-    time = fields.Integer('Total Time', default=0, compute='_compute_time_w2s') #date_server - date_waiting
+    time = fields.Float('Total Time', default=0, compute='_compute_time_w2s') #date_server - date_waiting
     employee_id = fields.Many2one('hr.employee', string='Chef')
     kitchen_id = fields.Many2one('kitchen.screen', string='Kitchen Screen')
     product_tmp_id = fields.Many2one('product.template', string='Product')
@@ -145,31 +151,28 @@ class KitchenOrder(models.Model):
 
     @api.onchange('stage_id')
     def change_stage(self):
-        _logger.warning(self.stage_id.name)
         color = 4
         if self.stage_id.name in ['Waiting', 'Preparing', 'Served', 'Void']:
             color = 3
             if not self.waiting_date:
                 self.waiting_date = self.get_current_time_idn()
-                _logger.warning(self.waiting_date)
         
         if self.stage_id.name in ['Preparing', 'Served', 'Void']:
             color = 3
             if not self.preparing_date:
                 self.preparing_date = self.get_current_time_idn()
-                _logger.warning(self.preparing_date)
         
         if self.stage_id.name in ['Served', 'Void']:
             color = 10
             if not self.served_date:
                 self.served_date = self.get_current_time_idn()
-                _logger.warning(self.served_date)
+                self._compute_time_w2s()
         
         if self.stage_id.name in ['Void']:
             color = 1
             if not self.date_end:
                 self.date_end = self.get_current_time_idn()
-                _logger.warning(self.date_end)
+                self._compute_time_w2s()
         
         self.color = color
 
@@ -188,6 +191,9 @@ class KitchenOrder(models.Model):
         date_order = self.get_current_time_idn()
         kitchenOrderSudo = self.env['kitchen.order'].sudo()
         value = {
+            'cid': orderline['cid'],
+            'order_name': orderline['order_name'],
+            'state_order': "Ordered",
             'color': 4,
             'date_order': date_order,
             'description': orderline['description'],
@@ -202,16 +208,60 @@ class KitchenOrder(models.Model):
         return kitchen_order.id
 
     @api.model
+    def update_kitchen_order(self, value):
+        kitchen_order = self.env['kitchen.order'].search([
+            ('id', '=', value['kitchen_order_id'])
+        ])
+        
+        quantity = kitchen_order.quantity
+
+        kitchenOrderSudo = self.env['kitchen.order'].sudo()
+        stage_cancel = stage_new = self.env['kitchen.order.type'].search([
+            ('name', '=', 'Void'),
+            ('kitchen_ids.id', '=', kitchen_order.kitchen_id.id)
+        ])
+
+        value_update = {
+            'quantity': value['quantity']
+        }
+        if not value['split']:
+            value_update = {
+                'color': 1,
+                'quantity': quantity,
+                'stage_id': stage_cancel.id,
+                'name': kitchen_order.name + ' cancel',
+                'state_order': 'Cancel',
+            }
+        kitchen_order.write(value_update)
+        if value['split']:
+            value = {
+                'cid': value['cid'],
+                'color': 1,
+                'order_name': kitchen_order.order_name,
+                'date_order': kitchen_order.date_order,
+                'date_end': self.get_current_time_idn(),
+                'description': kitchen_order.description,
+                'name': kitchen_order.name + ' cancel',
+                'quantity': quantity - value['quantity'],
+                'kitchen_id': kitchen_order.kitchen_id.id,
+                'product_tmp_id': kitchen_order.product_tmp_id.id,
+                'stage_id': stage_cancel.id,
+
+            }
+            kitchen_order = kitchenOrderSudo.create(value)
+        return kitchen_order.id
+
+    @api.model
     def save_description_void(self, value):
         kitchen_order = self.env['kitchen.order'].search([
             ('id', '=', value['kitchen_order_id'])
         ]).write({
             'description': value['description']
         })
+        return value['kitchen_order_id']
     
     def get_current_time_idn(self):
         return datetime.now() + timedelta(hours=8)
-        
 
 
 class KitchenTags(models.Model):
