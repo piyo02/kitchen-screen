@@ -37,7 +37,14 @@ class KitchenScreen(models.Model):
     _name = 'kitchen.screen'
 
     def _compute_order_count(self):
-        count_data = self.env['kitchen.order'].read_group([('kitchen_id', 'in', self.ids), '|', '&' , ('stage_id.fold', '=', False), ('stage_id', '=', False), ('date_order', '>=', str(datetime.today()))], ['kitchen_id'], ['kitchen_id'])
+        count_data = self.env['kitchen.order'].read_group([
+            ('kitchen_id', 'in', self.ids), 
+            '|', '&' , 
+            ('stage_id.fold', '=', False), 
+            ('stage_id', '=', False), 
+            ('date_order', '>=', str(datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)))
+        ], ['kitchen_id'], ['kitchen_id'])
+        
         result = dict((data['kitchen_id'][0], data['kitchen_id_count']) for data in count_data)
         for kitchen_screen in self:
             kitchen_screen.order_count = result.get(kitchen_screen.id, 0)
@@ -109,22 +116,75 @@ class KitchenOrder(models.Model):
         return self.env['kitchen.order.type'].search(search_domain, order=order, limit=1).id
 
     @api.one
-    def _compute_time_w2s(self):
-        if self.served_date and self.waiting_date:
-            diff_time = datetime.strptime(self.served_date, '%Y-%m-%d %H:%M:%S') - datetime.strptime(self.waiting_date, '%Y-%m-%d %H:%M:%S')
-            self.time = diff_time.total_seconds()
+    def _compute_time_w2s(self, kitchen_order_id):
+        KitchenOrderSudo = self.env['kitchen.order'].sudo().search([
+            ('id', '=', kitchen_order_id)
+        ])
+        time = ['Waktu Penyajian']
+        if KitchenOrderSudo.served_date and KitchenOrderSudo.waiting_date:
+            served_date  = datetime.strptime(KitchenOrderSudo.served_date, '%Y-%m-%d %H:%M:%S')
+            waiting_date = datetime.strptime(KitchenOrderSudo.waiting_date, '%Y-%m-%d %H:%M:%S')
+            total_seconds= (served_date - waiting_date).total_seconds()
+            
+            hours   = str( int( total_seconds//3600 ) )
+            minutes = str( int( (total_seconds%3600)//60 ) )
+            seconds = str( int( (total_seconds%3600)%60 )  )
+            time = '{} Jam {} Menit {} Detik'.format(hours,minutes,seconds)
+        return time
 
-    order_name = fields.Char('Order Name')
-    cid = fields.Char('cid')
-    state_order = fields.Char('State Order')
+    @api.multi
+    def write(self, vals):
+        result = super(KitchenOrder, self).write(vals)
+        self.send_field_updates(self.ids, self.stage_id.name, self.note)
+        return result
+
+    @api.model
+    def create(self, vals):
+        kitchen_order = super(KitchenOrder, self).create(vals)
+        self.send_field_updates(kitchen_order.id, kitchen_order.stage_id.name)
+        return kitchen_order
+
+    @api.model
+    def send_field_updates(self, kitchen_order_ids, state='', note='', action=''):
+        channel_name = "kitchen_screen"
+        data = {
+            'message': 'update_kitchen_order_fields', 
+            'action': action, 
+            'note': note, 
+            'kitchen_order_ids': kitchen_order_ids, 
+            'state_kitchen_order': state
+        }
+        self.env['pos.config'].send_to_all_poses(channel_name, data)
+
     active = fields.Boolean(default=True)
+    order_name = fields.Char('Order Name')
+    name = fields.Char(string='Order')
+
+    uid = fields.Char('uid')
+    state_order = fields.Char('State Order')
+
     color = fields.Integer(string='Color Index') #
-    date_end = fields.Datetime('End Time', index=True, copy=False) #terisi ketika statenya served
-    date_order = fields.Datetime('Order Date', index=True, copy=False) #terisi ketika order dibuat
-    waiting_date = fields.Datetime('Waiting Date', index=True, copy=False) #terisi ketika statenya waiting
-    preparing_date = fields.Datetime('Preparing Date', index=True, copy=False) #terisi ketika statenya preparing
-    served_date = fields.Datetime('Served Date', index=True, copy=False) #terisi ketika statenya served
+    old_color = fields.Integer(string='Old Color Index')
+
+    date_end = fields.Datetime('End Time') #terisi ketika statenya served
+    date_order = fields.Datetime('Order Date') #terisi ketika order dibuat
+    waiting_date = fields.Datetime('Waiting Date') #terisi ketika statenya waiting
+    preparing_date = fields.Datetime('Preparing Date') #terisi ketika statenya preparing
+    served_date = fields.Datetime('Served Date' ) #terisi ketika statenya served
+    time = fields.Char('Total Time') #date_server - date_waiting
+    
     description = fields.Html(string='Description')
+    note = fields.Html(string='Note Order')
+
+    stage_id = fields.Many2one('kitchen.order.type', string='Stage', track_visibility='onchange', index=True,
+        default=_get_default_stage_id, group_expand='_read_group_stage_ids',
+        domain="[('kitchen_ids', '=', kitchen_id)]", copy=False)
+    old_stage_id = fields.Many2one('kitchen.order.type', string='Old Stage')
+
+    quantity = fields.Integer('Quantity', default=1)
+    qty_cancel = fields.Integer('Quantity Cancel', default=0)
+    qty_change = fields.Integer('Quantity', default=0)
+
     displayed_image_id = fields.Many2one('ir.attachment', domain="[('res_model', '=', 'kitchen.order'), ('res_id', '=', id), ('mimetype', 'ilike', 'image')]", string='Cover Image')
     kanban_state = fields.Selection([
         ('normal', 'Grey'),
@@ -134,45 +194,41 @@ class KitchenOrder(models.Model):
     legend_blocked = fields.Char(related='stage_id.legend_blocked', string='Kanban Blocked Explanation', readonly=True, related_sudo=False)
     legend_done = fields.Char(related='stage_id.legend_done', string='Kanban Valid Explanation', readonly=True, related_sudo=False)
     legend_normal = fields.Char(related='stage_id.legend_normal', string='Kanban Ongoing Explanation', readonly=True, related_sudo=False)
-    name = fields.Char(string='Order')
-    quantity = fields.Integer('Quantity', default=1)
     sequence = fields.Integer(string='Sequence', index=True, default=10)
-    time = fields.Float('Total Time', default=0, compute='_compute_time_w2s') #date_server - date_waiting
     employee_id = fields.Many2one('hr.employee', string='Chef')
     kitchen_id = fields.Many2one('kitchen.screen', string='Kitchen Screen')
     product_tmp_id = fields.Many2one('product.template', string='Product')
     tag_ids = fields.Many2many('kitchen.tags', string='Tags', oldname='categ_ids')
-    stage_id = fields.Many2one('kitchen.order.type', string='Stage', track_visibility='onchange', index=True,
-        default=_get_default_stage_id, group_expand='_read_group_stage_ids',
-        domain="[('kitchen_ids', '=', kitchen_id)]", copy=False)
+
 
     def action_assign_to_me(self):
         self.write({'employee_id': self.env.user.id})
 
     @api.onchange('stage_id')
     def change_stage(self):
+        KitchenOrderSudo = self.env['kitchen.order'].sudo().search([
+            ('id', '=', self._origin.id)
+        ])
         color = 4
+
         if self.stage_id.name in ['Waiting', 'Preparing', 'Served', 'Void']:
-            color = 3
-            if not self.waiting_date:
-                self.waiting_date = self.get_current_time_idn()
-        
+            if not KitchenOrderSudo.waiting_date:
+                KitchenOrderSudo.write({'waiting_date': self.get_current_time_idn()})
+                color = 3
         if self.stage_id.name in ['Preparing', 'Served', 'Void']:
-            color = 3
-            if not self.preparing_date:
-                self.preparing_date = self.get_current_time_idn()
-        
+            if not KitchenOrderSudo.preparing_date:
+                KitchenOrderSudo.write({'preparing_date': self.get_current_time_idn()})
+                color = 3
         if self.stage_id.name in ['Served', 'Void']:
-            color = 10
-            if not self.served_date:
-                self.served_date = self.get_current_time_idn()
-                self._compute_time_w2s()
-        
-        if self.stage_id.name in ['Void']:
-            color = 1
-            if not self.date_end:
-                self.date_end = self.get_current_time_idn()
-                self._compute_time_w2s()
+            if not KitchenOrderSudo.date_end:
+                KitchenOrderSudo.write({'date_end': self.get_current_time_idn()})
+                color = 1
+        if self.stage_id.name in ['Served']:
+            if not KitchenOrderSudo.served_date:
+                KitchenOrderSudo.write({'served_date': self.get_current_time_idn()})
+                time = self._compute_time_w2s(KitchenOrderSudo.id)
+                KitchenOrderSudo.write({'time': time[0]})
+                color = 10
         
         self.color = color
 
@@ -185,83 +241,130 @@ class KitchenOrder(models.Model):
             ('name', '=', 'New'),
             ('kitchen_ids.id', '=', kitchen.id)
         ])
-        product = self.env['product.template'].search([
-            ('id', '=', orderline['product_id'])
-        ])
         date_order = self.get_current_time_idn()
         kitchenOrderSudo = self.env['kitchen.order'].sudo()
         value = {
-            'cid': orderline['cid'],
-            'order_name': orderline['order_name'],
-            'state_order': "Ordered",
             'color': 4,
-            'date_order': date_order,
-            'description': orderline['description'],
-            'name': orderline['name'],
-            'quantity': orderline['quantity'],
-            'kitchen_id': kitchen.id,
-            'product_tmp_id': product.id,
-            'stage_id': stage_new.id,
-
+            'date_order'    : date_order,
+            'description'   : orderline['description'],
+            'kitchen_id'    : kitchen.id,
+            'name'          : orderline['name'],
+            'note'          : orderline['note'],
+            'order_name'    : orderline['order_name'],
+            'product_tmp_id': orderline['product_id'],
+            'quantity'      : orderline['quantity'],
+            'state_order'   : "Ordered",
+            'stage_id'      : stage_new.id,
+            'uid'           : orderline['uid'],
         }
         kitchen_order = kitchenOrderSudo.create(value)
         return kitchen_order.id
 
     @api.model
     def update_kitchen_order(self, value):
-        kitchen_order = self.env['kitchen.order'].search([
+        kitchenOrderSudo = self.env['kitchen.order'].sudo()
+        kitchen_order = kitchenOrderSudo.search([
             ('id', '=', value['kitchen_order_id'])
         ])
-        
-        quantity = kitchen_order.quantity
-
-        kitchenOrderSudo = self.env['kitchen.order'].sudo()
         stage_cancel = stage_new = self.env['kitchen.order.type'].search([
             ('name', '=', 'Void'),
             ('kitchen_ids.id', '=', kitchen_order.kitchen_id.id)
         ])
 
-        value_update = {
-            'quantity': value['quantity']
-        }
-        if not value['split']:
-            value_update = {
-                'color': 1,
-                'quantity': quantity,
-                'stage_id': stage_cancel.id,
-                'name': kitchen_order.name + ' cancel',
-                'state_order': 'Cancel',
-            }
-        kitchen_order.write(value_update)
-        if value['split']:
-            value = {
-                'cid': value['cid'],
-                'color': 1,
-                'order_name': kitchen_order.order_name,
-                'date_order': kitchen_order.date_order,
-                'date_end': self.get_current_time_idn(),
-                'description': kitchen_order.description,
-                'name': kitchen_order.name + ' cancel',
-                'quantity': quantity - value['quantity'],
-                'kitchen_id': kitchen_order.kitchen_id.id,
-                'product_tmp_id': kitchen_order.product_tmp_id.id,
-                'stage_id': stage_cancel.id,
+        curr_color = kitchen_order.color
+        curr_stage_id = kitchen_order.stage_id.id
+        qty_cancel = int(value['qty'])
+        quantity = kitchen_order.quantity - qty_cancel
+        state_order = kitchen_order.state_order
 
-            }
-            kitchen_order = kitchenOrderSudo.create(value)
+        if quantity == 0:
+            qty_cancel = kitchen_order.qty_cancel + qty_cancel
+            color = 1
+            stage_id = stage_cancel.id
+            old_color = curr_color
+            old_stage_id = curr_stage_id
+            state_order = 'Cancel'
+            note = value['note']
+        else:
+            color = curr_color
+            stage_id = curr_stage_id
+            old_color = 0
+            old_stage_id = False
+            note = ''
+
+        value_update = {
+            'old_color'     : old_color,
+            'old_stage_id'  : old_stage_id,
+            'color'         : color,
+            'quantity'      : quantity,
+            'qty_cancel'    : qty_cancel,
+            'stage_id'      : stage_id,
+            'state_order'   : state_order,
+            'note'          : note,
+        }
+        kitchen_order.write(value_update)
         return kitchen_order.id
 
     @api.model
-    def save_description_void(self, value):
+    def cancel_order_cancelled(self, value):
         kitchen_order = self.env['kitchen.order'].search([
-            ('id', '=', value['kitchen_order_id'])
-        ]).write({
-            'description': value['description']
-        })
-        return value['kitchen_order_id']
+            ('id', '=', value['kitchen_order_id']),
+        ])
+        quantity = kitchen_order.quantity + kitchen_order.qty_cancel
+
+        if not kitchen_order.quantity:
+            color = kitchen_order.old_color
+            stage_id = kitchen_order.old_stage_id.id
+        else:
+            color = kitchen_order.color
+            stage_id = kitchen_order.stage_id.id
+        
+        value_update = {
+            'color'         : color,
+            'quantity'      : quantity, 
+            'stage_id'      : stage_id, 
+            'qty_cancel'    : 0,
+            'state_order'   : 'Ordered',
+        }
+        kitchen_order.write( value_update )
+        return kitchen_order.id
     
+    @api.model
+    def update_note_kitchen_order(self, value):
+        kitchen_order = self.env['kitchen.order'].search([
+            ('id', '=', value['kitchen_order_id']),
+        ])
+        update = {
+            'note': value['note']
+        }
+        kitchen_order.write(update)
+        return kitchen_order.id
+
+    @api.model
+    def update_qty_kitchen_order(self, value):
+        kitchen_order = self.env['kitchen.order'].search([
+            ('id', '=', value['kitchen_order_id']),
+        ])
+        update = {
+            'quantity': value['qty_change']
+        }
+        kitchen_order.write(update)
+        return kitchen_order.id
+    
+    @api.model
+    def update_qty_change_kitchen_order(self, value):
+        kitchen_order = self.env['kitchen.order'].search([
+            ('id', '=', value['kitchen_order_id']),
+        ])
+        update = {
+            'qty_change': value['qty_change']
+        }
+        kitchen_order.write(update)
+        return kitchen_order.id
+
     def get_current_time_idn(self):
-        return datetime.now() + timedelta(hours=8)
+        # return datetime.now() + timedelta(hours=8)
+        return datetime.now()
 
 
 class KitchenTags(models.Model):

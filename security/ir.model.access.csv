@@ -1,2 +1,6 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_kitchen_screen,kitchen.screen.user,
+kitchen_screen_all,kitchen_screen_all,model_kitchen_screen,base.user_root,1,1,1,1
+kitchen_order_all,kitchen_order_all,model_kitchen_order,base.user_root,1,1,1,1
+kitchen_tags_all,kitchen_tags_all,model_kitchen_tags,base.user_root,1,1,1,1
+kitchen_order_type_all,kitchen_order_type_all,model_kitchen_order_type,base.user_root,1,1,1,1
+edit_restaurant_table_all,edit_restaurant_table_all,model_restaurant_table,base.user_root,0,1,0,0

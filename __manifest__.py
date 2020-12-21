@@ -8,7 +8,7 @@ Modul Kitchen Screen Flectra
 """,
     'depends': ['point_of_sale', 'pos_restaurant'],
     'data': [
-        # 'security/ir.model.access.csv',
+        'security/ir.model.access.csv',
         'views/kitchen_screen_templates.xml',
         'views/kitchen_screen.xml',
     ],

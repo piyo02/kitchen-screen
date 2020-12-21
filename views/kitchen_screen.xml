@@ -13,7 +13,7 @@
                 <filter string="My Orders" name="my_orders" domain="[('employee_id','=',uid)]"/>
                 <filter string="Unassigned" name="unassigned" domain="[('employee_id', '=', False)]"/>
                 <separator/>
-                <filter string="Today" name="today" domain="[('date_order', '>=', datetime.datetime.combine(context_today(), datetime.time(0,0,0)))]" />
+                <filter string="Today" name="today" domain="[('date_order', '>=', datetime.datetime(datetime.datetime.today().year, datetime.datetime.today().month, datetime.datetime.today().day))]" />
                 <filter string="Archived" name="inactive" domain="[('active','=',False)]"/>
                 <separator/>
                 <group expand="0" string="Group By">
@@ -292,9 +292,16 @@
                         <field name="employee_id"
                             class="o_task_user_field"
                             options='{"no_open": True}'/>
-                        <field name="date_order" attrs="{'readonly':True} "/>
-                        <field name="date_end" attrs="{'readonly':True}" />
+                        <field name="time" />
                         <field name="quantity" attrs="{'readonly':True}" />
+                        <field name="qty_cancel" />
+                    </group>
+                    <group>
+                        <field name="date_order" attrs="{'readonly':True}"/>
+                        <field name="waiting_date" attrs="{'readonly':True}"/>
+                        <field name="preparing_date" attrs="{'readonly':True}"/>
+                        <field name="served_date" attrs="{'readonly':True}"/>
+                        <field name="date_end" attrs="{'readonly':True}"/>
                         <field name="legend_blocked" invisible="1"/>
                         <field name="legend_normal" invisible="1"/>
                         <field name="legend_done" invisible="1"/>
@@ -303,6 +310,10 @@
                 <notebook>
                     <page name="description_page" string="Description">
                         <field name="description" type="html"/>
+                        <div class="oe_clear"/>
+                    </page>
+                    <page name="note_page" string="Note">
+                        <field name="note" type="html"/>
                         <div class="oe_clear"/>
                     </page>
                     <page name="extra_info" string="Extra Info">
@@ -323,11 +334,12 @@
         <field name="name">kitchen.order.kanban</field>
         <field name="model">kitchen.order</field>
         <field name="arch" type="xml">
-            <kanban default_group_by="stage_id" class="o_kanban_small_column o_kanban_project_tasks" on_create="quick_create">
+            <kanban default_group_by="stage_id" class="o_kanban_small_column o_kanban_project_tasks" on_create="quick_create" create="false">
                 <field name="color"/>
                 <field name="stage_id" options='{"group_by_tooltip": {"description": "Stage Description", "legend_priority": "Use of stars"}}'/>
                 <field name="employee_id"/>
                 <field name="description"/>
+                <field name="note"/>
                 <field name="sequence"/>
                 <field name="active"/>
                 <field name="legend_blocked"/>
@@ -352,7 +364,7 @@
                                     <ul class="dropdown-menu" role="menu" aria-labelledby="dLabel">
                                         <li t-if="widget.editable"><a type="set_cover">Set Cover Image</a></li>
                                         <li t-if="widget.editable"><a type="edit">Edit Order</a></li>
-                                        <li t-if="widget.deletable"><a type="delete">Delete</a></li>
+                                        <!-- <li t-if="widget.deletable"><a type="delete">Delete</a></li> -->
                                         <li class="divider"></li>
                                         <li class="dropdown-header">Record's Colour</li>
                                         <li>
@@ -365,10 +377,18 @@
                                 <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
                                 <div class="row">
                                     <div class="col-md-6">
-                                        <label for="">Qty: </label>
-                                        <field name="quantity"/>    
+                                        <t t-if="record.quantity">
+                                            <label for="">Qty: </label>
+                                            <field name="quantity"/>
+                                        </t>
                                     </div>
                                     <div class="col-md-6">
+                                        <t t-if="record.qty_cancel">
+                                            <label for="" class="text-danger">Qty Cancel: </label>
+                                            <field class="text-danger" name="qty_cancel"/>    
+                                        </t>
+                                    </div>
+                                    <div class="col-md-12">
                                         <label for="">Waktu: </label>
                                         <field name="time"/>    
                                     </div>

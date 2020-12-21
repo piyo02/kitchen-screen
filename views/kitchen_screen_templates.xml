@@ -11,6 +11,9 @@
         <template id="assets" inherit_id="point_of_sale.assets">
             <xpath expr="." position="inside">
                 <script type="text/javascript" src="/kitchen_screen/static/src/js/kitchenpos.js"></script>
+                <script type="text/javascript" src="/kitchen_screen/static/src/js/models.js"></script>
+                <script type="text/javascript" src="/kitchen_screen/static/src/js/pos_multi_session.js"></script>
+                <script type="text/javascript" src="/kitchen_screen/static/src/js/pos.js"></script>
             </xpath>
             <xpath expr="//link[@id='pos-stylesheet']" position="after">
                 <link rel="stylesheet" href="/kitchen_screen/static/src/css/kitchen.css"/>
