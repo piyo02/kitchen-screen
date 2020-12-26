@@ -2,32 +2,13 @@ flectra.define('kitchen_screen.kitchenpos', function (require) {
 "use strict";
 
 var screens = require('point_of_sale.screens');
-var chrome = require("point_of_sale.chrome");
-var gui = require("point_of_sale.gui");
 var core = require('web.core');
 var rpc = require('web.rpc');
 
 var QWeb = core.qweb;
 var _t = core._t;
 
-chrome.OrderSelectorWidget.include({
-    deleteorder_click_handler: function(event, $el) {
-        var order = this.pos.get_order();
-        if (order.is_empty()) {
-            if (order.canceled_lines && order.canceled_lines.length) {
-                // orderline ada tapi belum di order
-                this.gui.screen_instances.products.order_widget.show_popup("order");
-            } else {
-                // orderline kosong
-                this._super(event, $el);
-            }
-        } else {
-            // orderline ada tapi tidak di cancel
-            this.gui.screen_instances.products.order_widget.show_popup("order");
-        }
-    },
-});
-
+// ketika tambah produk tetapi status order sudah close
 screens.ProductScreenWidget.include({
     click_product: function(product) {
         if(product.to_weight && this.pos.config.iface_electronic_scale){
@@ -46,6 +27,7 @@ screens.ProductScreenWidget.include({
 });
 
 screens.OrderWidget.include({
+    // ketika set qty tetapi status order sudah close
     set_value: function(val) {
     	var order = this.pos.get_order();
     	if (order.get_selected_orderline()) {
@@ -59,10 +41,6 @@ screens.OrderWidget.include({
                 }
                 order.get_selected_orderline().set_quantity(val);
                 order.get_selected_orderline().set_qty_change(val);
-                order.get_selected_orderline().update_qty_change_kitchen_order(
-                    order.get_selected_orderline().kitchen_orderline_id,
-                    val
-                )
             }else if( mode === 'discount'){
                 order.get_selected_orderline().set_discount(val);
             }else if( mode === 'price'){
@@ -72,6 +50,7 @@ screens.OrderWidget.include({
             }
     	}
     },
+    // popup ketika cancel qty
     show_popup: function(type, line) {
         var self = this;
         if (this.pos.config.ask_managers_pin) {
@@ -104,6 +83,7 @@ screens.OrderWidget.include({
         }
         return this.show_confirm_cancellation_popup(type, line);
     },
+    // popup reason cancel
     show_confirm_cancellation_popup: function(type, line) {
         var self = this;
         var order = this.pos.get_order();
@@ -131,8 +111,8 @@ screens.OrderWidget.include({
                         reason,
                         cancelled_reason_ids
                     );
-                    if( kitchen_orderline_id ){
-                        orderline.update_note_kitchen_order(kitchen_orderline_id, reason);
+                    if( kitchen_orderline_id && reason ){
+                        orderline.update_reason_cancel_kitchen_order(kitchen_orderline_id, reason);
                     }
                 }
                 if (type === "order") {
@@ -144,7 +124,6 @@ screens.OrderWidget.include({
                                 orderline.quantity,
                                 reason
                             );
-                            console.log( orderline.kitchen_orderline_id );
                             orderline.set_state_orderline('Cancel');
                         }
                     });
@@ -163,6 +142,7 @@ screens.OrderWidget.include({
         });
     },
 
+    // mengembalikan order yang telah dicancel
     cancel_order_cancelled: function(kitchen_orderline_id){
         var fields = { 
             'kitchen_order_id': kitchen_orderline_id,
@@ -195,25 +175,22 @@ screens.ActionButtonWidget.include({
         this._super(parent, options);
     },
 
+    // membuat kitchen order ketika tombol order ditekan
     save_kitchen_order_details: function(orderline){
         var self = this;
         
-        var uid         = orderline.uid;
-        var order_name  = orderline.order.name;
+        var uid         = orderline.order.uid;
         var note        = orderline.note;
         var product_name= orderline.product.display_name;
-        var table_name  = orderline.pos.table.name;
         var table_id    = orderline.pos.table.id;
         var product_id  = orderline.product.product_tmpl_id;
 
         var fields = {
-            'description'   : `Order ${product_name} meja ${table_name}`,
-            'name'          : `Order ${product_name} meja ${table_name}`,
+            'name'          : `Order ${product_name}`,
             'quantity'      : orderline.quantity,
             'table_id'      : table_id,
             'product_id'    : product_id,
             'uid'           : uid,
-            'order_name'    : order_name,
             'note'          : note,
         };
 
@@ -239,79 +216,41 @@ screens.ActionButtonWidget.include({
         });
     },
 
-    update_qty_kitchen_order: function(kitchen_order_id, qty_change){
-        var self = this;
-
-        var fields = {
-            'kitchen_order_id'  : kitchen_order_id,
-            'qty_change'        : qty_change,
-        };
-
-        rpc.query({
-            model: 'kitchen.order',
-            method: 'update_qty_kitchen_order',
-            args: [fields],
-        })
-        .then(function(kitchen_orderline_id){
-            return 'succes update_qty_kitchen_order';
-        }, function(err, ev){
-            ev.preventDefault();
-            var error_body = _t('Your Internet connection is probably down.');
-            if (err.data) {
-                var except = err.data;
-                error_body = except.arguments && except.arguments[0] || except.message || error_body;
-            }
-            self.gui.show_popup('error',{
-                'title': _t('Error: Could not Save Changes'),
-                'body': error_body,
-            });
-        });
-    },
-
     renderElement: function() {
         var self = this;
-        var btnOpenOrder = $('.open-order');
         this._super();
+        // tombol order ditekan
+        var isNotOrdered = $('.order-submit').hasClass('highlight');
         $('.order-submit').click(function(){
-            var orderlines = self.pos.get_order().orderlines;
-            orderlines.forEach(orderline => {
-                var state_orderline = 'Ordered';
-                if ( orderline.state_orderline == 'New' ){
-                    orderline.set_state_orderline(state_orderline);
-                    self.save_kitchen_order_details(orderline);
-                }
-                if ( orderline.get_qty_change() ){
-                    var kitchen_order_id = orderline.get_kitchen_orderline_id();
-                    var qty_change = orderline.get_qty_change();
-                    self.update_qty_kitchen_order(kitchen_order_id, qty_change);
-                }
-            });
+            if( isNotOrdered ){
+                var orderlines = self.pos.get_order().orderlines;
+                orderlines.forEach(orderline => {
+                    orderline.set_state_orderline("Ordered");
+                    if( !orderline.kitchen_orderline_id ){
+                        self.save_kitchen_order_details(orderline);
+                    } else {
+                        if ( orderline.qty_change > 0 ){
+                            var kitchen_order_id = orderline.kitchen_orderline_id;
+                            var qty = orderline.qty_change;
+                            orderline.update_qty_kitchen_order( kitchen_order_id, qty )
+                            orderline.set_qty_change(0);
+                        }
+                    }
+                });
+            }
         });
 
+        // tombol bill ditekan
         $('.order-printbill').click(function(){
             var table_id = self.pos.table.id;
-            rpc.query({
-                model: 'restaurant.table',
-                method: 'update_has_printbill',
-                args: [{'has_printbill': true, 'table_id': table_id}],
-            })
-            .then(function(table_id){
+            var has_printbill = self.pos.get_order().get_has_printbill();
+            if ( !has_printbill ){
                 self.pos.get_order().set_has_printbill(true);
-                var state_has_printbill = self.pos.get_order().get_has_printbill();
-            }, function(err, ev){
-                ev.preventDefault();
-                var error_body = _t('Your Internet connection is probably down.');
-                if (err.data) {
-                    var except = err.data;
-                    error_body = except.arguments && except.arguments[0] || except.message || error_body;
-                }
-                self.gui.show_popup('error',{
-                    'title': _t('Error: Could not Save Changes'),
-                    'body': error_body,
-                });
-            });
+                self.pos.get_order().update_has_printbill(table_id, true);
+            }
         });
 
+        // menampilkan atau menyembunyikan tombol open order
         if(self.pos.get_order()){
             var has_printbill = self.pos.get_order().get_has_printbill();
             if ( has_printbill ){
@@ -324,6 +263,7 @@ screens.ActionButtonWidget.include({
 });
 
 screens.NumpadWidget.include({
+    // popup qty yang akan dicancel
     clickDeleteLastChar: function() {
         if( this.pos.get_order().get_has_printbill() ){
             return this.pos.gui.show_popup('error', {
@@ -371,40 +311,24 @@ screens.NumpadWidget.include({
     },
 });
 
+// membuka status close order
 var ButtonOpenOrder = screens.ActionButtonWidget.extend({
     template: 'ButtonOpenOrder',
     button_click: function(){
         var self = this;
-        var user_is_waiter = self.pos.user.role; 
-        console.log(self)
-        console.log(user_is_waiter)
-        if ( user_is_waiter === 'cashier' ){
+        var user_is_waiter = self.pos.user.name; 
+        if ( user_is_waiter === 'Waiterss' || user_is_waiter === 'Waiterss2' ){
             return this.pos.gui.show_popup('error', {
                 title: '!!! Warning !!!',
                 body: `Meja sudah tutup pesanan dan hanya Kasir yang bisa membuka pesanan!!!`
             });
         }else {
+            var has_printbill = self.pos.get_order().get_has_printbill();
             var table_id = self.pos.table.id;
-            rpc.query({
-                model: 'restaurant.table',
-                method: 'update_has_printbill',
-                args: [{'has_printbill': false, 'table_id': table_id}],
-            })
-            .then(function(table_id){
+            if ( has_printbill ){
                 self.pos.get_order().set_has_printbill(false);
-                var state_has_printbill = self.pos.get_order().get_has_printbill();
-            }, function(err, ev){
-                ev.preventDefault();
-                var error_body = _t('Your Internet connection is probably down.');
-                if (err.data) {
-                    var except = err.data;
-                    error_body = except.arguments && except.arguments[0] || except.message || error_body;
-                }
-                self.gui.show_popup('error',{
-                    'title': _t('Error: Could not Save Changes'),
-                    'body': error_body,
-                });
-            });
+                self.pos.get_order().update_has_printbill(table_id, false);
+            }
         }
     },
 });

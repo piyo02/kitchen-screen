@@ -24,7 +24,6 @@ flectra.define("kitchen_screen.pos", function(require) {
                 if (data.action && data.action === 'unlink') {
                     console.log('unlink');
                 } else {
-                    // def = self.load_update_kitchen_orders(data.kitchen_order_ids);
                     var opened_products_list_screen = self.gui.get_current_screen() === 'products' && self.gui.screen_instances.products;
                     if (opened_products_list_screen){
                         var kitchen_order_id = data.kitchen_order_ids[0];
@@ -41,7 +40,9 @@ flectra.define("kitchen_screen.pos", function(require) {
 
                         if( orderline ){
                             orderline.set_state_kitchen_order( state_kitchen_order );
-                            orderline.set_note( note );
+                            if( state_kitchen_order === 'Void' ){
+                                orderline.set_state_orderline('Cancel');
+                            }
                         }
                     }
                 }

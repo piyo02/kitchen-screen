@@ -7,7 +7,7 @@ _logger = logging.getLogger(__name__)
 class KitchenOrderType(models.Model):
     _name = 'kitchen.order.type'
     _description = 'Kitchen Stage'
-    _order = 'sequence, id'
+    _order = 'id'
 
     def _get_default_kitchen_ids(self):
         default_kitchen_id = self.env.context.get('default_kitchen_id')
@@ -17,45 +17,30 @@ class KitchenOrderType(models.Model):
     description = fields.Text(transalate=True)
     fold = fields.Boolean(string='Folded in Kanban',
         help='This stage is folded in the kanban view when there are no records in that stage to display.')
-    legend_priority = fields.Char(
-        string='Starred Explanation', translate=True,
-        help='Explanation text to help users using the star on tasks or issues in this stage.')
-    legend_blocked = fields.Char(
-        'Red Kanban Label', default=lambda s: _('Blocked'), translate=True, required=True,
-        help='Override the default value displayed for the blocked state for kanban selection, when the task or issue is in that stage.')
-    legend_done = fields.Char(
-        'Green Kanban Label', default=lambda s: _('Ready for Next Stage'), translate=True, required=True,
-        help='Override the default value displayed for the done state for kanban selection, when the task or issue is in that stage.')
-    legend_normal = fields.Char(
-        'Grey Kanban Label', default=lambda s: _('In Progress'), translate=True, required=True,
-        help='Override the default value displayed for the normal state for kanban selection, when the task or issue is in that stage.')
-    sequence = fields.Integer(default=1)
     kitchen_ids = fields.Many2many('kitchen.screen', 'kitchen_screen_type_rel', 'type_id', 'kitchen_id', string='Kitchen Screen',
         default=_get_default_kitchen_ids)
 
 class KitchenScreen(models.Model):
     _name = 'kitchen.screen'
+    _order = 'sequence, id'
 
     def _compute_order_count(self):
         count_data = self.env['kitchen.order'].read_group([
             ('kitchen_id', 'in', self.ids), 
-            '|', '&' , 
+            '&', '&' , 
             ('stage_id.fold', '=', False), 
-            ('stage_id', '=', False), 
-            ('date_order', '>=', str(datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)))
+            ('date_order', '>=', str(datetime.now().replace(hour=0,minute=0,second=0,microsecond=0))),
+            ('stage_id.name', '=', "New"), 
         ], ['kitchen_id'], ['kitchen_id'])
         
         result = dict((data['kitchen_id'][0], data['kitchen_id_count']) for data in count_data)
         for kitchen_screen in self:
             kitchen_screen.order_count = result.get(kitchen_screen.id, 0)
 
-    active = fields.Boolean(default=True)
     color = fields.Integer(string='Color Index')
     name = fields.Char(string='Kitchen Screen')
     label_orders = fields.Char(string='Use Orders as', default='Orders', help="Gives label to orders on kitchen screen's kanban view.")
-    sequence = fields.Integer(string='Sequence', index=True, default=10, help="Gives the sequence order when displaying a list of kitchen screen")
     order_count = fields.Integer(compute='_compute_order_count', string='Order')
-    orders = fields.One2many('kitchen.order', 'kitchen_id', string='Order Line')
     order_ids = fields.One2many('kitchen.order', 'kitchen_id', string='Order Line', domain=['|', ('stage_id.fold', '=', False), ('stage_id', '=', False)])
     table_id = fields.Many2one('restaurant.table', string='Tables')
     type_ids = fields.Many2many('kitchen.order.type', 'kitchen_screen_type_rel', 'kitchen_id', 'type_id', string='Tasks Stages')
@@ -63,6 +48,7 @@ class KitchenScreen(models.Model):
     displayed_image_id = fields.Many2one('ir.attachment',
         domain="[('res_model', '=', 'project.project'), ('res_id', '=', id), ('mimetype', 'ilike', 'image')]",
         string='Cover Image')
+    sequence = fields.Integer(string='Sequence', index=True, default=10, help="Gives the sequence order when displaying a list of kitchen screen")
 
     @api.multi
     def close_dialog(self):
@@ -79,7 +65,7 @@ class KitchenScreen(models.Model):
             'type': 'ir.actions.act_window',
             'target': 'inline'
         }
-
+    
 
 class KitchenOrder(models.Model):
     _name = 'kitchen.order'
@@ -135,7 +121,7 @@ class KitchenOrder(models.Model):
     @api.multi
     def write(self, vals):
         result = super(KitchenOrder, self).write(vals)
-        self.send_field_updates(self.ids, self.stage_id.name, self.note)
+        self.send_field_updates(self.ids, self.stage_id.name)
         return result
 
     @api.model
@@ -145,36 +131,32 @@ class KitchenOrder(models.Model):
         return kitchen_order
 
     @api.model
-    def send_field_updates(self, kitchen_order_ids, state='', note='', action=''):
+    def send_field_updates(self, kitchen_order_ids, state='', action=''):
         channel_name = "kitchen_screen"
         data = {
             'message': 'update_kitchen_order_fields', 
             'action': action, 
-            'note': note, 
             'kitchen_order_ids': kitchen_order_ids, 
             'state_kitchen_order': state
         }
         self.env['pos.config'].send_to_all_poses(channel_name, data)
 
-    active = fields.Boolean(default=True)
-    order_name = fields.Char('Order Name')
     name = fields.Char(string='Order')
-
     uid = fields.Char('uid')
-    state_order = fields.Char('State Order')
+    has_payment = fields.Integer('Has Payment', default=0)
 
-    color = fields.Integer(string='Color Index') #
+    color = fields.Integer(string='Color Index') 
     old_color = fields.Integer(string='Old Color Index')
 
-    date_end = fields.Datetime('End Time') #terisi ketika statenya served
-    date_order = fields.Datetime('Order Date') #terisi ketika order dibuat
-    waiting_date = fields.Datetime('Waiting Date') #terisi ketika statenya waiting
-    preparing_date = fields.Datetime('Preparing Date') #terisi ketika statenya preparing
-    served_date = fields.Datetime('Served Date' ) #terisi ketika statenya served
-    time = fields.Char('Total Time') #date_server - date_waiting
+    date_end = fields.Datetime('End Time')
+    date_order = fields.Datetime('Order Date')
+    waiting_date = fields.Datetime('Waiting Date')
+    preparing_date = fields.Datetime('Preparing Date')
+    served_date = fields.Datetime('Served Date' )
+    time = fields.Char('Total Time')
     
-    description = fields.Html(string='Description')
     note = fields.Html(string='Note Order')
+    reason_cancel = fields.Html(string='Reason Cancel')
 
     stage_id = fields.Many2one('kitchen.order.type', string='Stage', track_visibility='onchange', index=True,
         default=_get_default_stage_id, group_expand='_read_group_stage_ids',
@@ -183,18 +165,8 @@ class KitchenOrder(models.Model):
 
     quantity = fields.Integer('Quantity', default=1)
     qty_cancel = fields.Integer('Quantity Cancel', default=0)
-    qty_change = fields.Integer('Quantity', default=0)
 
     displayed_image_id = fields.Many2one('ir.attachment', domain="[('res_model', '=', 'kitchen.order'), ('res_id', '=', id), ('mimetype', 'ilike', 'image')]", string='Cover Image')
-    kanban_state = fields.Selection([
-        ('normal', 'Grey'),
-        ('done', 'Green'),
-        ('blocked', 'Red')], string='Kanban State',
-        copy=False, default='normal', required=True )
-    legend_blocked = fields.Char(related='stage_id.legend_blocked', string='Kanban Blocked Explanation', readonly=True, related_sudo=False)
-    legend_done = fields.Char(related='stage_id.legend_done', string='Kanban Valid Explanation', readonly=True, related_sudo=False)
-    legend_normal = fields.Char(related='stage_id.legend_normal', string='Kanban Ongoing Explanation', readonly=True, related_sudo=False)
-    sequence = fields.Integer(string='Sequence', index=True, default=10)
     employee_id = fields.Many2one('hr.employee', string='Chef')
     kitchen_id = fields.Many2one('kitchen.screen', string='Kitchen Screen')
     product_tmp_id = fields.Many2one('product.template', string='Product')
@@ -219,13 +191,20 @@ class KitchenOrder(models.Model):
             if not KitchenOrderSudo.preparing_date:
                 KitchenOrderSudo.write({'preparing_date': self.get_current_time_idn()})
                 color = 3
-        if self.stage_id.name in ['Served', 'Void']:
+        if self.stage_id.name in ['Void']:
             if not KitchenOrderSudo.date_end:
-                KitchenOrderSudo.write({'date_end': self.get_current_time_idn()})
+                KitchenOrderSudo.write({
+                    'date_end': self.get_current_time_idn(),
+                    'quantity': 0,
+                    'qty_cancel': KitchenOrderSudo.quantity,
+                })
                 color = 1
         if self.stage_id.name in ['Served']:
             if not KitchenOrderSudo.served_date:
-                KitchenOrderSudo.write({'served_date': self.get_current_time_idn()})
+                KitchenOrderSudo.write({
+                    'date_end': self.get_current_time_idn(),
+                    'served_date': self.get_current_time_idn()
+                })
                 time = self._compute_time_w2s(KitchenOrderSudo.id)
                 KitchenOrderSudo.write({'time': time[0]})
                 color = 10
@@ -246,16 +225,13 @@ class KitchenOrder(models.Model):
         value = {
             'color': 4,
             'date_order'    : date_order,
-            'description'   : orderline['description'],
             'kitchen_id'    : kitchen.id,
             'name'          : orderline['name'],
-            'note'          : orderline['note'],
-            'order_name'    : orderline['order_name'],
             'product_tmp_id': orderline['product_id'],
             'quantity'      : orderline['quantity'],
-            'state_order'   : "Ordered",
             'stage_id'      : stage_new.id,
             'uid'           : orderline['uid'],
+            'note'          : orderline['note'],
         }
         kitchen_order = kitchenOrderSudo.create(value)
         return kitchen_order.id
@@ -273,9 +249,8 @@ class KitchenOrder(models.Model):
 
         curr_color = kitchen_order.color
         curr_stage_id = kitchen_order.stage_id.id
-        qty_cancel = int(value['qty'])
+        qty_cancel = 0 if value['qty'] == '' else int(value['qty'])
         quantity = kitchen_order.quantity - qty_cancel
-        state_order = kitchen_order.state_order
 
         if quantity == 0:
             qty_cancel = kitchen_order.qty_cancel + qty_cancel
@@ -283,14 +258,13 @@ class KitchenOrder(models.Model):
             stage_id = stage_cancel.id
             old_color = curr_color
             old_stage_id = curr_stage_id
-            state_order = 'Cancel'
-            note = value['note']
+            reason_cancel = value['reason_cancel']
         else:
             color = curr_color
             stage_id = curr_stage_id
             old_color = 0
             old_stage_id = False
-            note = ''
+            reason_cancel = ''
 
         value_update = {
             'old_color'     : old_color,
@@ -299,8 +273,7 @@ class KitchenOrder(models.Model):
             'quantity'      : quantity,
             'qty_cancel'    : qty_cancel,
             'stage_id'      : stage_id,
-            'state_order'   : state_order,
-            'note'          : note,
+            'reason_cancel' : reason_cancel,
         }
         kitchen_order.write(value_update)
         return kitchen_order.id
@@ -324,18 +297,17 @@ class KitchenOrder(models.Model):
             'quantity'      : quantity, 
             'stage_id'      : stage_id, 
             'qty_cancel'    : 0,
-            'state_order'   : 'Ordered',
         }
         kitchen_order.write( value_update )
         return kitchen_order.id
     
     @api.model
-    def update_note_kitchen_order(self, value):
+    def update_reason_cancel_kitchen_order(self, value):
         kitchen_order = self.env['kitchen.order'].search([
             ('id', '=', value['kitchen_order_id']),
         ])
         update = {
-            'note': value['note']
+            'reason_cancel': value['reason_cancel']
         }
         kitchen_order.write(update)
         return kitchen_order.id
@@ -350,17 +322,16 @@ class KitchenOrder(models.Model):
         }
         kitchen_order.write(update)
         return kitchen_order.id
-    
+
     @api.model
-    def update_qty_change_kitchen_order(self, value):
+    def update_note_kitchen_order(self, value):
         kitchen_order = self.env['kitchen.order'].search([
             ('id', '=', value['kitchen_order_id']),
         ])
-        update = {
-            'qty_change': value['qty_change']
-        }
-        kitchen_order.write(update)
-        return kitchen_order.id
+        kitchen_order.write({
+            'note': value['note']
+        })
+        return kitchen_order
 
     def get_current_time_idn(self):
         # return datetime.now() + timedelta(hours=8)
