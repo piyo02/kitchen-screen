@@ -119,6 +119,47 @@ flectra.define('kitchen_screen.models', function (require) {
             return this.state_kitchen_order;
         },
 
+         // membuat kitchen order ketika tombol order ditekan
+        save_kitchen_order_details: function(orderline){
+            var self = this;
+            
+            var uid         = orderline.order.uid;
+            var note        = orderline.note;
+            var product_name= orderline.product.display_name;
+            var table_id    = orderline.pos.table.id;
+            var product_id  = orderline.product.product_tmpl_id;
+
+            var fields = {
+                'name'          : `Order ${product_name}`,
+                'quantity'      : orderline.quantity,
+                'table_id'      : table_id,
+                'product_id'    : product_id,
+                'uid'           : uid,
+                'note'          : note,
+            };
+
+            rpc.query({
+                model: 'kitchen.order',
+                method: 'create_from_ui',
+                args: [fields],
+            })
+            .then(function(kitchen_orderline_id){
+                orderline.set_kitchen_orderline_id(kitchen_orderline_id);
+                return 'succes rpc';
+            }, function(err, ev){
+                ev.preventDefault();
+                var error_body = _t('Your Internet connection is probably down.');
+                if (err.data) {
+                    var except = err.data;
+                    error_body = except.arguments && except.arguments[0] || except.message || error_body;
+                }
+                self.gui.show_popup('error',{
+                    'title': _t('Error: Could not Save Changes'),
+                    'body': error_body,
+                });
+            });
+        },
+
         update_kitchen_order: function(kitchen_orderline_id, qty_change, reason = ""){
             var self = this;
             var fields = { 

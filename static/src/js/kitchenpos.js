@@ -175,70 +175,9 @@ screens.ActionButtonWidget.include({
         this._super(parent, options);
     },
 
-    // membuat kitchen order ketika tombol order ditekan
-    save_kitchen_order_details: function(orderline){
-        var self = this;
-        
-        var uid         = orderline.order.uid;
-        var note        = orderline.note;
-        var product_name= orderline.product.display_name;
-        var table_id    = orderline.pos.table.id;
-        var product_id  = orderline.product.product_tmpl_id;
-
-        var fields = {
-            'name'          : `Order ${product_name}`,
-            'quantity'      : orderline.quantity,
-            'table_id'      : table_id,
-            'product_id'    : product_id,
-            'uid'           : uid,
-            'note'          : note,
-        };
-
-        rpc.query({
-            model: 'kitchen.order',
-            method: 'create_from_ui',
-            args: [fields],
-        })
-        .then(function(kitchen_orderline_id){
-            orderline.set_kitchen_orderline_id(kitchen_orderline_id);
-            return 'succes rpc';
-        }, function(err, ev){
-            ev.preventDefault();
-            var error_body = _t('Your Internet connection is probably down.');
-            if (err.data) {
-                var except = err.data;
-                error_body = except.arguments && except.arguments[0] || except.message || error_body;
-            }
-            self.gui.show_popup('error',{
-                'title': _t('Error: Could not Save Changes'),
-                'body': error_body,
-            });
-        });
-    },
-
     renderElement: function() {
         var self = this;
         this._super();
-        // tombol order ditekan
-        var isNotOrdered = $('.order-submit').hasClass('highlight');
-        $('.order-submit').click(function(){
-            if( isNotOrdered ){
-                var orderlines = self.pos.get_order().orderlines;
-                orderlines.forEach(orderline => {
-                    orderline.set_state_orderline("Ordered");
-                    if( !orderline.kitchen_orderline_id ){
-                        self.save_kitchen_order_details(orderline);
-                    } else {
-                        if ( orderline.qty_change > 0 ){
-                            var kitchen_order_id = orderline.kitchen_orderline_id;
-                            var qty = orderline.qty_change;
-                            orderline.update_qty_kitchen_order( kitchen_order_id, qty )
-                            orderline.set_qty_change(0);
-                        }
-                    }
-                });
-            }
-        });
 
         // tombol bill ditekan
         $('.order-printbill').click(function(){
