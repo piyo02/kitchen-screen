@@ -121,7 +121,7 @@ class KitchenOrder(models.Model):
     @api.multi
     def write(self, vals):
         result = super(KitchenOrder, self).write(vals)
-        self.send_field_updates(self.ids, self.stage_id.name)
+        self.send_field_updates(self.ids, self.stage_id.name, self.has_printbill)
         return result
 
     @api.model
@@ -131,19 +131,20 @@ class KitchenOrder(models.Model):
         return kitchen_order
 
     @api.model
-    def send_field_updates(self, kitchen_order_ids, state='', action=''):
+    def send_field_updates(self, kitchen_order_ids, state='', has_printbill=False, action=''):
         channel_name = "kitchen_screen"
         data = {
             'message': 'update_kitchen_order_fields', 
             'action': action, 
             'kitchen_order_ids': kitchen_order_ids, 
-            'state_kitchen_order': state
+            'state_kitchen_order': state,
+            'has_printbill': has_printbill
         }
         self.env['pos.config'].send_to_all_poses(channel_name, data)
 
     name = fields.Char(string='Order')
     uid = fields.Char('uid')
-    has_payment = fields.Integer('Has Payment', default=0)
+    has_printbill = fields.Boolean('Has Print Bill', default=False)    
 
     color = fields.Integer(string='Color Index') 
     old_color = fields.Integer(string='Old Color Index')
@@ -276,6 +277,16 @@ class KitchenOrder(models.Model):
             'reason_cancel' : reason_cancel,
         }
         kitchen_order.write(value_update)
+        return kitchen_order.id
+
+    @api.model
+    def update_has_printbill(self, value):
+        kitchen_order = self.env['kitchen.order'].search([
+            ('id', '=', value['kitchen_order_id']),
+        ])
+        kitchen_order.write({
+            'has_printbill': value['has_printbill']
+        })
         return kitchen_order.id
 
     @api.model

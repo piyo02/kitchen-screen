@@ -14,8 +14,7 @@ flectra.define("kitchen_screen.pos", function(require) {
             var self = this;
             this.ready.then(function () {
                 self.bus.add_channel_callback("kitchen_screen", self.orderline_state_updates, self);
-                self.bus.add_channel_callback("restaurant_table", self.state_order_table_id, self);
-            });
+            }); 
         },
         orderline_state_updates: function(data){
             var self = this;
@@ -43,33 +42,12 @@ flectra.define("kitchen_screen.pos", function(require) {
                             if( state_kitchen_order === 'Void' ){
                                 orderline.set_state_orderline('Cancel');
                             }
+                            orderline.set_has_printbill( data.has_printbill )
                         }
                     }
                 }
 
             }
         },
-        state_order_table_id: function(data){
-            var self = this;
-            if (data.message === 'update_state_order_widget') {
-                var def = new $.Deferred();
-                if (data.action && data.action === 'unlink') {
-                    console.log('unlink');
-                } else {
-                    var opened_products_list_screen = self.gui.get_current_screen() === 'products' && self.gui.screen_instances.products;
-                    if (opened_products_list_screen){
-                        var table_id = data.table_id[0];
-                        var has_printbill = data.has_printbill;
-                        
-                        var order_widget = self.table.id === table_id ? self.table : false;
-                        if( order_widget ){
-                            self.get_order().set_has_printbill( has_printbill );
-                        }
-                    }
-                }
-
-            }
-        }
-
     });
 });

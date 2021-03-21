@@ -8,79 +8,6 @@ flectra.define('kitchen_screen.models', function (require) {
     var QWeb = core.qweb;
     var _t = core._t;
     
-    models.load_models({
-        model: "restaurant.table",
-        fields: ['has_printbill'],
-        loaded: function(self, tables){
-            for (var i = 0; i < tables.length; i++){
-                var table = self.tables_by_id[tables[i].id];
-                if (table){
-                    table.has_printbill = tables[i].has_printbill;
-                }
-            }
-        }
-    });
-
-
-    var _super_order = models.Order.prototype;
-    models.Order = models.Order.extend({
-        initialize: function(attr,options){
-            _super_order.initialize.apply(this,arguments);
-            if(!this.has_printbill && this.table){
-                this.has_printbill = this.table.has_printbill;
-            }
-            this.save_to_db();
-        },
-        set_has_printbill: function(state) {
-            this.has_printbill = state;
-            this.change_display_button();
-        },
-        get_has_printbill: function(state){
-            return this.has_printbill;
-        },
-        change_display_button: function(){
-            var state = this.get_has_printbill();
-            var btnOpenOrder = $('.open-order');
-            
-            if( state ){
-                btnOpenOrder.removeAttr('style');
-            } else {
-                btnOpenOrder.css('display', 'none');
-            }
-        },
-        update_has_printbill: function(table_id, state){
-            var self = this;
-            rpc.query({
-                model: 'restaurant.table',
-                method: 'update_has_printbill',
-                args: [{'has_printbill': state, 'table_id': table_id}],
-            })
-            .then(function(table_id){
-                self.set_has_printbill(state);
-            }, function(err, ev){
-                ev.preventDefault();
-                var error_body = _t('Your Internet connection is probably down.');
-                if (err.data) {
-                    var except = err.data;
-                    error_body = except.arguments && except.arguments[0] || except.message || error_body;
-                }
-                self.pos.gui.show_popup('error',{
-                    'title': _t('Error: Could not Save Changes'),
-                    'body': error_body,
-                });
-            });
-        },
-        export_as_JSON: function() {
-            var json = _super_order.export_as_JSON.apply(this,arguments);
-            json.has_printbill            = this.has_printbill || false;
-            return json;
-        },
-        init_from_JSON: function(json) {
-            _super_order.init_from_JSON.apply(this,arguments);
-            this.has_printbill            = this.pos.tables_by_id[json.table_id].has_printbill;
-        }
-    });
-    
     var _super_orderline = models.Orderline.prototype;
     models.Orderline = models.Orderline.extend({
         initialize: function(attr, options) {
@@ -89,6 +16,7 @@ flectra.define('kitchen_screen.models', function (require) {
             this.state_orderline        = this.state_orderline      || 'New';
             this.kitchen_orderline_id   = this.kitchen_orderline_id || false;
             this.qty_change             = this.qty_change           || 0;
+            this.has_printbill          = this.has_printbill        || false;
         },
         set_state_orderline: function(state_orderline){
             this.state_orderline = state_orderline;
@@ -104,6 +32,13 @@ flectra.define('kitchen_screen.models', function (require) {
         get_qty_change: function(qty_change){
             return this.qty_change;
         },
+        set_has_printbill: function(has_printbill){
+            this.has_printbill = has_printbill;
+            this.trigger('change', this);
+        },
+        get_has_printbill: function(has_printbill){
+            return this.has_printbill;
+        },
         set_kitchen_orderline_id: function(kitchen_orderline_id){
             this.kitchen_orderline_id = kitchen_orderline_id;
             this.trigger('change', this);
@@ -117,6 +52,38 @@ flectra.define('kitchen_screen.models', function (require) {
         },
         get_state_kitchen_order: function(state_kitchen_order){
             return this.state_kitchen_order;
+        },
+        change_display_button: function(){
+            var state = this.get_has_printbill();
+            var btnOpenOrder = $('.open-order');
+            
+            if( state ){
+                btnOpenOrder.removeAttr('style');
+            } else {
+                btnOpenOrder.css('display', 'none');
+            }
+        },
+        update_has_printbill: function(kitchen_order_id, state){
+            var self = this;
+            rpc.query({
+                model: 'kitchen.order',
+                method: 'update_has_printbill',
+                args: [{'has_printbill': state, 'kitchen_order_id': kitchen_order_id}],
+            })
+            .then(function(kitchen_order_id){
+                self.set_has_printbill(state);
+            }, function(err, ev){
+                ev.preventDefault();
+                var error_body = _t('Your Internet connection is probably down.');
+                if (err.data) {
+                    var except = err.data;
+                    error_body = except.arguments && except.arguments[0] || except.message || error_body;
+                }
+                self.pos.gui.show_popup('error',{
+                    'title': _t('Error: Could not Save Changes'),
+                    'body': error_body,
+                });
+            });
         },
 
          // membuat kitchen order ketika tombol order ditekan
@@ -280,6 +247,7 @@ flectra.define('kitchen_screen.models', function (require) {
             json.kitchen_orderline_id   = this.kitchen_orderline_id;
             json.state_kitchen_order    = this.state_kitchen_order;
             json.qty_change             = this.qty_change;
+            json.has_printbill          = this.has_printbill;
             return json;
         },
         init_from_JSON: function(json){
@@ -287,6 +255,7 @@ flectra.define('kitchen_screen.models', function (require) {
             this.kitchen_orderline_id   = json.kitchen_orderline_id;
             this.state_kitchen_order    = json.state_kitchen_order;
             this.qty_change             = json.qty_change;
+            this.has_printbill          = json.has_printbill;
             _super_orderline.init_from_JSON.call(this, json);
         },
     });

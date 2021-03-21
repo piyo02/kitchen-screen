@@ -14,14 +14,16 @@ screens.ProductScreenWidget.include({
         if(product.to_weight && this.pos.config.iface_electronic_scale){
             this.pos.gui.show_screen('scale',{product: product});
         }else{
-            if( !this.pos.get_order().get_has_printbill() ){
-                this.pos.get_order().add_product(product);
-            }else {
-                return this.pos.gui.show_popup('error', {
-                    title: '!!! Warning !!!',
-                    body: `Meja sudah tutup pesanan!!!`
-                });
+            var orderline = this.pos.get_order().orderlines.models[0];
+            if( orderline ){
+                if( orderline.get_has_printbill() ){
+                    return this.pos.gui.show_popup('error', {
+                        title: '!!! Warning !!!',
+                        body: `Meja sudah tutup pesanan!!!`
+                    });
+                }
             }
+            this.pos.get_order().add_product(product);
         }
     },
 });
@@ -33,11 +35,14 @@ screens.OrderWidget.include({
     	if (order.get_selected_orderline()) {
             var mode = this.numpad_state.get('mode');
             if( mode === 'quantity'){
-                if( this.pos.get_order().get_has_printbill() ){
-                    return this.pos.gui.show_popup('error', {
-                        title: '!!! Warning !!!',
-                        body: `Meja sudah tutup pesanan!!!`
-                    });
+                var orderline = this.pos.get_order().orderlines.models[0]; 
+                if( orderline ){
+                    if( orderline.get_has_printbill() ){
+                        return this.pos.gui.show_popup('error', {
+                            title: '!!! Warning !!!',
+                            body: `Meja sudah tutup pesanan!!!`
+                        });
+                    }
                 }
                 order.get_selected_orderline().set_quantity(val);
                 order.get_selected_orderline().set_qty_change(val);
@@ -181,21 +186,26 @@ screens.ActionButtonWidget.include({
 
         // tombol bill ditekan
         $('.order-printbill').click(function(){
-            var table_id = self.pos.table.id;
-            var has_printbill = self.pos.get_order().get_has_printbill();
-            if ( !has_printbill ){
-                self.pos.get_order().set_has_printbill(true);
-                self.pos.get_order().update_has_printbill(table_id, true);
+            var orderline = self.pos.get_order().orderlines.models[0];
+            if( orderline ){
+                var has_printbill = orderline.get_has_printbill();
+                if ( !has_printbill ){
+                    orderline.set_has_printbill(true);
+                    orderline.update_has_printbill(orderline.kitchen_orderline_id, true);
+                }
             }
         });
 
         // menampilkan atau menyembunyikan tombol open order
         if(self.pos.get_order()){
-            var has_printbill = self.pos.get_order().get_has_printbill();
-            if ( has_printbill ){
-                $('.open-order').removeAttr('style');
-            }else {
-                $('.open-order').css('display', 'none');
+            var orderline = self.pos.get_order().orderlines.models[0];
+            if( orderline ){
+                var has_printbill = orderline.get_has_printbill();
+                if ( has_printbill ){
+                    $('.open-order').removeAttr('style');
+                }else {
+                    $('.open-order').css('display', 'none');
+                }
             }
         }
     }
@@ -204,11 +214,14 @@ screens.ActionButtonWidget.include({
 screens.NumpadWidget.include({
     // popup qty yang akan dicancel
     clickDeleteLastChar: function() {
-        if( this.pos.get_order().get_has_printbill() ){
-            return this.pos.gui.show_popup('error', {
-                title: '!!! Warning !!!',
-                body: `Meja sudah tutup pesanan!!!`
-            });
+        var orderline = this.pos.get_order().orderlines.models[0];
+        if( orderline ){
+            if( orderline.get_has_printbill() ){
+                return this.pos.gui.show_popup('error', {
+                    title: '!!! Warning !!!',
+                    body: `Meja sudah tutup pesanan!!!`
+                });
+            }
         }
         
         var self = this;
@@ -262,11 +275,13 @@ var ButtonOpenOrder = screens.ActionButtonWidget.extend({
                 body: `Meja sudah tutup pesanan dan hanya Kasir yang bisa membuka pesanan!!!`
             });
         }else {
-            var has_printbill = self.pos.get_order().get_has_printbill();
-            var table_id = self.pos.table.id;
-            if ( has_printbill ){
-                self.pos.get_order().set_has_printbill(false);
-                self.pos.get_order().update_has_printbill(table_id, false);
+            var orderline = self.pos.get_order().orderlines.models[0];
+            if( orderline ){
+                var has_printbill = orderline.get_has_printbill();
+                if ( has_printbill ){
+                    orderline.set_has_printbill(false);
+                    orderline.update_has_printbill(orderline.kitchen_orderline_id, false);
+                }
             }
         }
     },
